@@ -31,7 +31,7 @@ T = TypeVar("T")
 
 DEFAULT_DB_PATH = get_hermes_home() / "state.db"
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
     source TEXT NOT NULL,
     user_id TEXT,
+    user_name TEXT,
     model TEXT,
     model_config TEXT,
     system_prompt TEXT,
@@ -330,6 +331,13 @@ class SessionDB:
                         pass  # Column already exists
                 cursor.execute("UPDATE schema_version SET version = 6")
 
+            if current_version < 7:
+                try:
+                    cursor.execute("ALTER TABLE sessions ADD COLUMN user_name TEXT")
+                except sqlite3.OperationalError:
+                    pass  # Column already exists
+                cursor.execute("UPDATE schema_version SET version = 7")
+
         # Unique title index — always ensure it exists (safe to run after migrations
         # since the title column is guaranteed to exist at this point)
         try:
@@ -360,18 +368,20 @@ class SessionDB:
         model_config: Dict[str, Any] = None,
         system_prompt: str = None,
         user_id: str = None,
+        user_name: str = None,
         parent_session_id: str = None,
     ) -> str:
         """Create a new session record. Returns the session_id."""
         def _do(conn):
             conn.execute(
-                """INSERT OR IGNORE INTO sessions (id, source, user_id, model, model_config,
+                """INSERT OR IGNORE INTO sessions (id, source, user_id, user_name, model, model_config,
                    system_prompt, parent_session_id, started_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     session_id,
                     source,
                     user_id,
+                    user_name,
                     model,
                     json.dumps(model_config) if model_config else None,
                     system_prompt,

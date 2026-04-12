@@ -169,7 +169,7 @@ class InsightsEngine:
     # =========================================================================
 
     # Columns we actually need (skip system_prompt, model_config blobs)
-    _SESSION_COLS = ("id, source, user_id, model, started_at, ended_at, "
+    _SESSION_COLS = ("id, source, user_id, user_name, model, started_at, ended_at, "
                      "message_count, tool_call_count, input_tokens, output_tokens, "
                      "cache_read_tokens, cache_write_tokens, billing_provider, "
                      "billing_base_url, billing_mode, estimated_cost_usd, "
@@ -476,7 +476,7 @@ class InsightsEngine:
         })
 
         for s in sessions:
-            uid = s.get("user_id") or "unknown"
+            uid = s.get("user_name") or s.get("user_id") or "unknown"
             d = user_data[uid]
             d["sessions"] += 1
             d["messages"] += s.get("message_count") or 0
