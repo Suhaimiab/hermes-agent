@@ -146,6 +146,8 @@ COMMAND_REGISTRY: list[CommandDef] = [
     CommandDef("usage", "Show token usage and rate limits for the current session", "Info"),
     CommandDef("insights", "Show usage insights and analytics", "Info",
                args_hint="[days]"),
+    CommandDef("sessions", "Admin: browse all user sessions and conversations", "Info",
+               gateway_only=True, args_hint="[session_id]"),
     CommandDef("platforms", "Show gateway/messaging platform status", "Info",
                cli_only=True, aliases=("gateway",)),
     CommandDef("paste", "Check clipboard for an image and attach it", "Info",

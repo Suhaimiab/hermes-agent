@@ -2726,6 +2726,9 @@ class GatewayRunner:
         if canonical == "insights":
             return await self._handle_insights_command(event)
 
+        if canonical == "sessions":
+            return await self._handle_sessions_command(event)
+
         if canonical == "reload-mcp":
             return await self._handle_reload_mcp_command(event)
 
@@ -6228,6 +6231,113 @@ class GatewayRunner:
         except Exception as e:
             logger.error("Insights command error: %s", e, exc_info=True)
             return f"Error generating insights: {e}"
+
+    def _is_admin(self, event: MessageEvent) -> bool:
+        """Check if the message sender is a gateway admin.
+
+        Reads GATEWAY_ADMIN_USERS env var (comma-separated user IDs).
+        """
+        admin_csv = os.environ.get("GATEWAY_ADMIN_USERS", "").strip()
+        if not admin_csv:
+            return False
+        admin_ids = {a.strip() for a in admin_csv.split(",") if a.strip()}
+        user_id = event.source.user_id if event.source else None
+        return user_id in admin_ids
+
+    async def _handle_sessions_command(self, event: MessageEvent) -> str:
+        """Handle /sessions command -- admin-only browse of all user sessions."""
+        if not self._is_admin(event):
+            return "This command is restricted to admin users. Set GATEWAY_ADMIN_USERS in your .env."
+
+        import asyncio as _asyncio
+        args = event.get_command_args().strip()
+
+        try:
+            from hermes_state import SessionDB
+            loop = _asyncio.get_event_loop()
+
+            if args:
+                # /sessions <session_id> — view conversation
+                session_id = args.split()[0]
+
+                def _get_conversation():
+                    db = SessionDB()
+                    session = db.get_session(session_id)
+                    if not session:
+                        db.close()
+                        return f"Session `{session_id}` not found."
+
+                    msgs = db.get_messages(session_id)
+                    db.close()
+
+                    user_name = session.get("user_name") or session.get("user_id") or "unknown"
+                    model = session.get("model") or "unknown"
+                    lines = [
+                        f"**Session:** `{session_id}`",
+                        f"**User:** {user_name} | **Model:** {model}",
+                        f"**Source:** {session.get('source', 'unknown')}",
+                        "",
+                    ]
+
+                    for m in msgs:
+                        role = m.get("role", "?")
+                        content = m.get("content") or ""
+                        if role == "user":
+                            # Truncate long messages
+                            preview = content[:500]
+                            if len(content) > 500:
+                                preview += "..."
+                            lines.append(f"**User:** {preview}")
+                        elif role == "assistant":
+                            preview = content[:500]
+                            if len(content) > 500:
+                                preview += "..."
+                            lines.append(f"**Agent:** {preview}")
+                        # Skip system/tool messages for readability
+
+                    if not msgs:
+                        lines.append("_No messages in this session._")
+
+                    return "\n".join(lines)
+
+                return await loop.run_in_executor(None, _get_conversation)
+
+            else:
+                # /sessions — list recent sessions across all users
+                def _list_sessions():
+                    db = SessionDB()
+                    sessions = db.list_sessions_rich(limit=20)
+                    db.close()
+
+                    if not sessions:
+                        return "No sessions found."
+
+                    lines = ["**Recent Sessions (all users):**", ""]
+                    for s in sessions:
+                        user_name = s.get("user_name") or s.get("user_id") or "?"
+                        source = s.get("source", "?")
+                        preview = s.get("preview") or "_no messages_"
+                        sid = s.get("id", "?")
+                        msg_count = s.get("message_count") or 0
+                        started = s.get("started_at")
+                        if started:
+                            from datetime import datetime
+                            dt = datetime.fromtimestamp(started).strftime("%m/%d %H:%M")
+                        else:
+                            dt = "?"
+                        lines.append(
+                            f"`{sid[:20]}` | **{user_name}** ({source}) | {dt} | {msg_count} msgs\n"
+                            f"  _{preview}_"
+                        )
+                    lines.append("")
+                    lines.append("View a session: `/sessions <session_id>`")
+                    return "\n".join(lines)
+
+                return await loop.run_in_executor(None, _list_sessions)
+
+        except Exception as e:
+            logger.error("Sessions command error: %s", e, exc_info=True)
+            return f"Error: {e}"
 
     async def _handle_reload_mcp_command(self, event: MessageEvent) -> str:
         """Handle /reload-mcp command -- disconnect and reconnect all MCP servers."""
