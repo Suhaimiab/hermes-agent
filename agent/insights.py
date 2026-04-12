@@ -135,6 +135,7 @@ class InsightsEngine:
                 "overview": {},
                 "models": [],
                 "platforms": [],
+                "users": [],
                 "tools": [],
                 "activity": {},
                 "top_sessions": [],
@@ -144,6 +145,7 @@ class InsightsEngine:
         overview = self._compute_overview(sessions, message_stats)
         models = self._compute_model_breakdown(sessions)
         platforms = self._compute_platform_breakdown(sessions)
+        users = self._compute_user_breakdown(sessions)
         tools = self._compute_tool_breakdown(tool_usage)
         activity = self._compute_activity_patterns(sessions)
         top_sessions = self._compute_top_sessions(sessions)
@@ -156,6 +158,7 @@ class InsightsEngine:
             "overview": overview,
             "models": models,
             "platforms": platforms,
+            "users": users,
             "tools": tools,
             "activity": activity,
             "top_sessions": top_sessions,
@@ -166,7 +169,7 @@ class InsightsEngine:
     # =========================================================================
 
     # Columns we actually need (skip system_prompt, model_config blobs)
-    _SESSION_COLS = ("id, source, model, started_at, ended_at, "
+    _SESSION_COLS = ("id, source, user_id, model, started_at, ended_at, "
                      "message_count, tool_call_count, input_tokens, output_tokens, "
                      "cache_read_tokens, cache_write_tokens, billing_provider, "
                      "billing_base_url, billing_mode, estimated_cost_usd, "
@@ -463,6 +466,42 @@ class InsightsEngine:
         result.sort(key=lambda x: x["sessions"], reverse=True)
         return result
 
+    def _compute_user_breakdown(self, sessions: List[Dict]) -> List[Dict]:
+        """Break down usage by user_id."""
+        user_data = defaultdict(lambda: {
+            "sessions": 0, "messages": 0, "input_tokens": 0,
+            "output_tokens": 0, "cache_read_tokens": 0,
+            "cache_write_tokens": 0, "total_tokens": 0, "tool_calls": 0,
+            "cost": 0.0, "has_pricing": True,
+        })
+
+        for s in sessions:
+            uid = s.get("user_id") or "unknown"
+            d = user_data[uid]
+            d["sessions"] += 1
+            d["messages"] += s.get("message_count") or 0
+            inp = s.get("input_tokens") or 0
+            out = s.get("output_tokens") or 0
+            cache_read = s.get("cache_read_tokens") or 0
+            cache_write = s.get("cache_write_tokens") or 0
+            d["input_tokens"] += inp
+            d["output_tokens"] += out
+            d["cache_read_tokens"] += cache_read
+            d["cache_write_tokens"] += cache_write
+            d["total_tokens"] += inp + out + cache_read + cache_write
+            d["tool_calls"] += s.get("tool_call_count") or 0
+            cost, status = _estimate_cost(s)
+            d["cost"] += cost
+            if status == "unknown":
+                d["has_pricing"] = False
+
+        result = [
+            {"user": user, **data}
+            for user, data in user_data.items()
+        ]
+        result.sort(key=lambda x: x["total_tokens"], reverse=True)
+        return result
+
     def _compute_tool_breakdown(self, tool_usage: List[Dict]) -> List[Dict]:
         """Process tool usage data into a ranked list with percentages."""
         total_calls = sum(t["count"] for t in tool_usage) if tool_usage else 0
@@ -672,6 +711,18 @@ class InsightsEngine:
                 lines.append(f"  {p['platform']:<14} {p['sessions']:>8} {p['messages']:>10,} {p['total_tokens']:>14,}")
             lines.append("")
 
+        # User breakdown
+        users = report.get("users", [])
+        # Show if there are multiple users, or a single non-unknown user
+        if len(users) > 1 or (users and users[0]["user"] != "unknown"):
+            lines.append("  👤 Users")
+            lines.append("  " + "─" * 56)
+            lines.append(f"  {'User':<22} {'Sessions':>8} {'Messages':>10} {'Tokens':>14}")
+            for u in users:
+                user_label = u["user"][:20]
+                lines.append(f"  {user_label:<22} {u['sessions']:>8} {u['messages']:>10,} {u['total_tokens']:>14,}")
+            lines.append("")
+
         # Tool usage
         if report["tools"]:
             lines.append("  🔧 Top Tools")
@@ -766,6 +817,16 @@ class InsightsEngine:
             lines.append("**📱 Platforms:**")
             for p in report["platforms"]:
                 lines.append(f"  {p['platform']} — {p['sessions']} sessions, {p['messages']:,} msgs")
+            lines.append("")
+
+        # Users (if multi-user)
+        users = report.get("users", [])
+        if len(users) > 1 or (users and users[0]["user"] != "unknown"):
+            lines.append("**👤 Users:**")
+            for u in users[:10]:
+                lines.append(f"  {u['user'][:20]} — {u['sessions']} sessions, {u['messages']:,} msgs, {u['total_tokens']:,} tokens")
+            if len(users) > 10:
+                lines.append(f"  ... and {len(users) - 10} more users")
             lines.append("")
 
         # Tools (top 8)
