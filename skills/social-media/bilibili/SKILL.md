@@ -114,7 +114,7 @@ Non-TTY stdout defaults to YAML automatically; use `--json` for strict JSON pars
 If `bili` isn't installed and can't be, Bilibili's public search API is reachable directly via curl for **search only** (no video details, no subtitles). Requires a browser `User-Agent` header — Bilibili's risk control 412-blocks requests without one:
 
 ```bash
-curl -s -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" \
+curl -s --max-time 10 -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" \
   "https://api.bilibili.com/x/web-interface/search/all/v2?keyword=%E5%85%B3%E9%94%AE%E8%AF%8D&page=1"
 ```
 
