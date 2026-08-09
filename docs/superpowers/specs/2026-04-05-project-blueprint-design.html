@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; line-height: 1.6; max-width: 900px; margin: 40px auto; padding: 0 20px; color: #24292e; font-size: 14px; }
+  h1 { border-bottom: 2px solid #e1e4e8; padding-bottom: 0.3em; font-size: 2em; }
+  h2 { border-bottom: 1px solid #e1e4e8; padding-bottom: 0.3em; font-size: 1.5em; margin-top: 2em; }
+  h3 { font-size: 1.25em; margin-top: 1.5em; }
+  h4 { font-size: 1.1em; }
+  code { background: #f6f8fa; padding: 0.2em 0.4em; border-radius: 3px; font-size: 85%; }
+  pre { background: #f6f8fa; padding: 16px; border-radius: 6px; overflow-x: auto; }
+  pre code { background: none; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+  th, td { border: 1px solid #e1e4e8; padding: 8px 12px; text-align: left; }
+  th { background: #f6f8fa; font-weight: 600; }
+  strong { font-weight: 600; }
+  ul, ol { padding-left: 2em; }
+  li { margin: 0.3em 0; }
+  blockquote { border-left: 4px solid #dfe2e5; padding: 0 1em; color: #6a737d; margin: 1em 0; }
+  hr { border: none; border-top: 1px solid #e1e4e8; margin: 2em 0; }
+  @media print { body { max-width: none; margin: 20px; } }
+</style>
+</head>
+<body>
+<h1 id="hermes-agent-project-blueprint-design-spec">Hermes Agent Project Blueprint — Design Spec</h1>
+<h2 id="context">Context</h2>
+<p>The Hermes Agent project needs a comprehensive onboarding blueprint for new developers joining the team. The project already has <code>AGENTS.md</code> (reference guide for AI coding assistants, how-to-add-things) and <code>CONTRIBUTING.md</code> (contributor workflow, PR process, code style). The blueprint fills a distinct gap: the <strong>"understand the whole system"</strong> document — architectural context, design rationale, tribal knowledge, and a structured onboarding path.</p>
+<h2 id="target-audience">Target Audience</h2>
+<p>New developers joining the Hermes team. They need to understand the full system architecture, learn why decisions were made, avoid known pitfalls, and have a concrete path to productivity.</p>
+<h2 id="format">Format</h2>
+<p>Single <code>BLUEPRINT.md</code> file at the project root. Strong table of contents for navigation. Complements (does not duplicate) AGENTS.md and CONTRIBUTING.md.</p>
+<h2 id="sections">Sections</h2>
+<h3 id="1-welcome-quick-start">1. Welcome &amp; Quick Start</h3>
+<ul>
+<li>One-paragraph project identity (self-improving multi-platform AI agent, learning loop, run-anywhere, 15 platforms)</li>
+<li>Dev setup summary (references CONTRIBUTING.md for full details)</li>
+<li>Three runtime modes: CLI, Gateway, Batch — with one-liner examples</li>
+<li>Quick reference table of <code>~/.hermes/</code> directory layout</li>
+</ul>
+<h3 id="2-architecture-deep-dive">2. Architecture Deep-Dive</h3>
+<ul>
+<li>System-level ASCII diagram: three runtime modes → AIAgent → LLM providers, tool registry, session DB, memory</li>
+<li>Agent loop walkthrough: <code>run_conversation()</code> step-by-step (prompt building → API call → tool dispatch → result injection → context check → loop/return)</li>
+<li>Message format: OpenAI-compatible schema, reasoning content storage, tool result structure</li>
+<li>Provider abstraction: OpenAI/Anthropic/OpenRouter/custom endpoints, <code>anthropic_adapter.py</code>, credential resolution via <code>hermes_cli/auth.py</code>, credential pooling (<code>credential_pool.py</code>)</li>
+<li>Prompt assembly pipeline: <code>prompt_builder.py</code> order (identity → tool guidance → memory guidance → skills index → project context), prompt caching implications</li>
+<li>Context management: token estimation (<code>model_metadata.py</code>), compression trigger and 5-phase algorithm (<code>context_compressor.py</code>), what gets summarized vs preserved</li>
+<li>Session persistence: SQLite WAL mode with FTS5 (<code>hermes_state.py</code>), session/message schema, JSON logs as secondary format</li>
+<li>File dependency chain: <code>tools/registry.py</code> → <code>tools/*.py</code> → <code>model_tools.py</code> → <code>run_agent.py</code>/<code>cli.py</code>/<code>gateway</code></li>
+</ul>
+<h3 id="3-component-guides">3. Component Guides</h3>
+<h4 id="3a-tool-system">3a. Tool System</h4>
+<ul>
+<li>Self-registration pattern: <code>registry.register()</code> at import time, <code>_discover_tools()</code> triggers imports</li>
+<li>Anatomy of a tool: schema, handler, <code>check_fn</code>, toolset assignment, <code>requires_env</code></li>
+<li><code>ToolRegistry</code> dispatch flow: <code>handle_function_call()</code> → registry lookup → handler → JSON string result</li>
+<li>Async bridging: <code>_run_async()</code> with per-context event loop strategy</li>
+<li>Toolset grouping (<code>toolsets.py</code>): core toolsets, platform presets, recursive resolution via <code>resolve_toolset()</code></li>
+<li>Approval system (<code>approval.py</code>): dangerous command detection, per-session allow-listing</li>
+<li>Agent-level tools (todo, memory): intercepted before <code>handle_function_call()</code></li>
+<li>Terminal backends (<code>tools/environments/</code>): local, Docker, SSH, Modal, Daytona, Singularity — <code>BaseEnvironment</code> ABC</li>
+</ul>
+<h4 id="3b-cli-tui">3b. CLI &amp; TUI</h4>
+<ul>
+<li><code>HermesCLI</code> lifecycle: config loading → skin init → prompt_toolkit session → agent loop</li>
+<li>Slash command registry: <code>CommandDef</code> in <code>commands.py</code> — single source of truth for CLI, gateway, Telegram menus, Slack, autocomplete</li>
+<li>Adding a slash command: 3-step process (CommandDef → CLI handler → optional gateway handler)</li>
+<li>Skin engine (<code>skin_engine.py</code>): data-driven theming, built-in vs user YAML skins, what skins customize</li>
+<li>Callbacks (<code>callbacks.py</code>): clarify, sudo, approval flows</li>
+<li>Profile system: multi-instance isolation via <code>HERMES_HOME</code> env var override, <code>get_hermes_home()</code> everywhere</li>
+</ul>
+<h4 id="3c-gateway-messaging-platforms">3c. Gateway &amp; Messaging Platforms</h4>
+<ul>
+<li><code>GatewayRunner</code> architecture: platform lifecycle, message routing, agent caching per session</li>
+<li>Platform adapter ABC (<code>base.py</code>): <code>connect()</code>, <code>disconnect()</code>, <code>send()</code>, <code>get_chat_info()</code> required; <code>edit_message()</code>, <code>send_typing()</code>, <code>send_image()</code>, <code>send_voice()</code> optional</li>
+<li>Full platform list: Telegram, Discord, Slack, WhatsApp, Signal, Email, Matrix, Mattermost, Home Assistant, DingTalk, Feishu, WeCom, SMS, Webhook, API Server</li>
+<li>Message flow: platform event → <code>MessageEvent</code> normalization → <code>GatewayRunner.handle_message()</code> → AIAgent → response → adapter → platform</li>
+<li>Session management (<code>session.py</code>): <code>SessionStore</code>, <code>SessionContext</code>, <code>SessionSource</code>, <code>build_session_key()</code>, PII redaction with hashing</li>
+<li>Session context prompt: dynamic injection telling agent where messages come from and what platforms are connected</li>
+<li>Media caching: platform images/audio/docs cached to <code>~/.hermes/cache/</code> with age-based cleanup</li>
+<li>Token locks: prevent two profiles from using the same bot credential</li>
+<li>Adding a new platform: implement <code>BasePlatformAdapter</code>, register in gateway config</li>
+</ul>
+<h4 id="3d-skills-system">3d. Skills System</h4>
+<ul>
+<li>Skills vs tools decision framework (instructions + scripts vs Python API integration)</li>
+<li><code>SKILL.md</code> format: frontmatter schema (name, description, version, platforms, required_environment_variables, metadata)</li>
+<li>Skill loading: <code>prompt_builder.py</code> builds skills index with two-layer cache (in-process LRU + disk snapshot)</li>
+<li>Conditional activation: <code>fallback_for_toolsets</code>, <code>requires_toolsets</code>, <code>fallback_for_tools</code>, <code>requires_tools</code></li>
+<li>Platform filtering: <code>platforms</code> field restricts to macOS/Linux/Windows</li>
+<li>Skill categories: bundled (<code>skills/</code>), optional (<code>optional-skills/</code>), hub (community)</li>
+<li>Agent-created skills: the self-improvement loop</li>
+<li>Skills Hub: discovery, installation, publishing via <code>skills_hub.py</code></li>
+<li>Skill setup metadata: <code>required_environment_variables</code> for secure load-time credential collection</li>
+<li>Skills guard (<code>skills_guard.py</code>): security scanning for hub-installed skills</li>
+<li>Skill guidelines: no external deps, progressive disclosure, include helper scripts, test with <code>hermes --toolsets skills -q</code></li>
+</ul>
+<h4 id="3e-rl-training-trajectory-system">3e. RL Training &amp; Trajectory System</h4>
+<ul>
+<li>Trajectory saving: <code>agent/trajectory.py</code> — how conversations become training data</li>
+<li>Batch runner (<code>batch_runner.py</code>): <code>BatchRunner</code> class, multiprocessing pool, checkpointing, <code>--resume</code>, tool statistics aggregation, reasoning filtering</li>
+<li>Trajectory compression (<code>trajectory_compressor.py</code>): <code>CompressionConfig</code>, 5-phase strategy (protect head/tail, summarize middle via LLM), JSONL output with metrics</li>
+<li>RL environments (<code>environments/</code>): <code>HermesAgentBaseEnv</code> extending Atropos <code>BaseEnv</code>, <code>HermesAgentEnvConfig</code>, subclass interface (<code>setup()</code>, <code>get_next_item()</code>, <code>format_prompt()</code>, <code>compute_reward()</code>, <code>evaluate()</code>)</li>
+<li>Existing environments: web research (FRAMES), agentic OPD, terminal bench, YC bench</li>
+<li><code>rl_cli.py</code>: RL training runner, <code>RL_MAX_ITERATIONS=200</code>, tinker-atropos submodule checks</li>
+<li><code>mini_swe_runner.py</code>: lightweight SWE task executor with pluggable backends (local/Docker/Modal), JSONL trajectory output</li>
+</ul>
+<h4 id="3f-supporting-systems">3f. Supporting Systems</h4>
+<ul>
+<li>Cron scheduler (<code>cron/</code>): natural language job creation, <code>croniter</code> parsing, scheduled execution</li>
+<li>MCP server (<code>mcp_serve.py</code>): stdio-based, 10-tool surface (conversations_list, conversation_get, messages_read, attachments_fetch, events_poll, events_wait, messages_send, channels_list, permissions_list_open, permissions_respond), connects SessionDB + routing metadata</li>
+<li>ACP adapter (<code>acp_adapter/</code>): VS Code / Zed / JetBrains Copilot integration</li>
+<li>Honcho integration (<code>honcho_integration/</code>): <code>HonchoSessionManager</code>, persistent cross-session user modeling, configurable write frequency, runs alongside SQLite + file memory</li>
+</ul>
+<h3 id="4-design-decisions-rationale">4. Design Decisions &amp; Rationale</h3>
+<ul>
+<li><strong>OpenAI message format as internal standard</strong> — Provider-agnostic default, Anthropic adapter translates, avoids lock-in</li>
+<li><strong>Synchronous agent loop</strong> — Simpler to reason about and debug, async only at gateway level where needed</li>
+<li><strong>Self-registering tools at import time</strong> — No central manifest, adding a tool = file + one import line, registry always in sync</li>
+<li><strong>Skills over tools for most capabilities</strong> — Skills are instructions (cheap, no code changes, community-contributed), tools are Python (heavyweight, require releases)</li>
+<li><strong>SQLite with FTS5</strong> — Zero-dependency, single-file, fast full-text search, no external DB to configure</li>
+<li><strong>Prompt caching as a first-class constraint</strong> — Cost difference is dramatic, drives the no-mid-conversation-changes rule</li>
+<li><strong><code>HERMES_HOME</code> env var for path isolation</strong> — One override before import gives every module the right path for profiles</li>
+<li><strong>Ephemeral injection for system prompts</strong> — Not persisted to DB/logs, keeps sessions clean, avoids leaking internals</li>
+<li><strong>Pluggable terminal backends</strong> — Same agent logic runs locally, in Docker, over SSH, or serverless</li>
+<li><strong>WAL mode with random jitter retry</strong> — Breaks convoy effects in multi-process gateway, better than deterministic backoff</li>
+<li><strong>Credential pooling with exhaustion tracking</strong> — Same-provider failover, multiple auth sources, configurable selection strategies</li>
+</ul>
+<h3 id="5-gotchas-tribal-knowledge">5. Gotchas &amp; Tribal Knowledge</h3>
+<p>Note: AGENTS.md "Known Pitfalls" section covers specific coding rules (hardcoded paths, ANSI escapes, menu libraries, etc.). This section focuses on the <strong>architectural reasoning</strong> behind those rules and adds cross-cutting concerns that don't fit in a single-file reference.</p>
+<p><strong>Profile isolation is load-bearing architecture:</strong>
+The <code>HERMES_HOME</code> env var is set <em>before any module imports</em> in <code>hermes_cli/main.py:_apply_profile_override()</code>. Every module that calls <code>get_hermes_home()</code> at import time gets the right path automatically. This is why hardcoding <code>~/.hermes</code> breaks profiles — it bypasses the entire isolation mechanism. This single pattern broke 5 times in PR #3575 because contributors didn't understand the load order.</p>
+<p><strong>Prompt caching economics drive architecture:</strong>
+The rule against mid-conversation changes (no toolset swaps, no memory reloads, no system prompt rebuilds) isn't arbitrary caution — it's driven by cost. Anthropic prompt caching gives dramatic savings only when the prefix is stable. Breaking the cache mid-conversation can 10x the cost of a session. Context compression is the <em>only</em> allowed exception because it's a last resort before hitting context limits.</p>
+<p><strong>The tool system has two dispatch layers:</strong>
+Agent-level tools (todo, memory, session_search) are intercepted in <code>run_agent.py</code> <em>before</em> <code>handle_function_call()</code>. Everything else goes through <code>tools/registry.py</code>. If you add a tool and it's not being called, check whether it's being intercepted at the wrong layer.</p>
+<p><strong>Async bridging is subtle and context-dependent:</strong>
+<code>model_tools.py:_run_async()</code> uses three different strategies depending on the calling context (gateway async loop, worker thread, CLI main thread). If you see "Event loop is closed" errors, the bridging strategy is probably wrong for your context.</p>
+<p><strong>Cross-platform is not optional:</strong>
+Hermes runs on Windows, macOS, and Linux in production. <code>termios</code>/<code>fcntl</code> are Unix-only, <code>.env</code> encoding varies, process management differs. Every PR touching OS-level code needs Windows consideration. See AGENTS.md "Known Pitfalls" and CONTRIBUTING.md "Cross-Platform Compatibility" for the specific rules.</p>
+<p><strong>Test isolation is enforced by fixture:</strong>
+<code>_isolate_hermes_home</code> autouse fixture in <code>tests/conftest.py</code> redirects all state to tmp dirs. Profile tests additionally need <code>Path.home()</code> mocked because <code>_get_profiles_root()</code> is HOME-anchored, not HERMES_HOME-anchored. If your test is reading/writing real <code>~/.hermes/</code>, the fixture isn't working — investigate, don't bypass.</p>
+<p><strong>Config migration is versioned:</strong>
+Adding to <code>DEFAULT_CONFIG</code> requires bumping <code>_config_version</code> in <code>hermes_cli/config.py</code> (check the current value there). This triggers automatic migration for existing users. Forgetting this means existing installs silently miss the new option.</p>
+<p><strong>Context files have safety limits:</strong>
+Project context files (.hermes.md, AGENTS.md, etc.) are truncated at 20K chars (70% head + 20% tail) and scanned for prompt injection patterns by <code>_scan_context_content()</code>. If a legitimate context file is being flagged or truncated, understand these limits before changing them.</p>
+<h3 id="6-your-first-week">6. Your First Week</h3>
+<h4 id="day-1-2-get-oriented">Day 1-2: Get Oriented</h4>
+<ul>
+<li>Set up dev environment, run <code>hermes doctor</code>, run full test suite (<code>pytest tests/ -v</code>)</li>
+<li>Read blueprint sections 1-3 (overview, architecture, component guides intro)</li>
+<li>Start a CLI session, have a conversation, inspect the session in <code>~/.hermes/state.db</code></li>
+<li>Trace a single message: user input → <code>cli.py</code> → <code>run_agent.py:run_conversation()</code> → <code>model_tools.py:handle_function_call()</code> → tool execution → response</li>
+</ul>
+<h4 id="day-3-tools-skills">Day 3: Tools &amp; Skills</h4>
+<ul>
+<li>Read <code>tools/file_tools.py</code> (straightforward tool example)</li>
+<li>Create a toy tool: register it, add to a toolset, verify it appears in the agent's tool list</li>
+<li>Read a skill (<code>skills/research/</code> is a good starting point)</li>
+<li>Load a skill in a session, observe how it appears in the system prompt via <code>prompt_builder.py</code></li>
+</ul>
+<h4 id="day-4-gateway">Day 4: Gateway</h4>
+<ul>
+<li>Run the gateway locally with Telegram (create a bot via BotFather)</li>
+<li>Trace a gateway message: Telegram adapter → <code>GatewayRunner.handle_message()</code> → AIAgent → response</li>
+<li>Read <code>gateway/platforms/base.py</code> to understand the adapter contract</li>
+<li>Read <code>gateway/session.py</code> to understand session key generation and PII redaction</li>
+</ul>
+<h4 id="day-5-rl-trajectories">Day 5: RL &amp; Trajectories</h4>
+<ul>
+<li>Run a CLI session with <code>--save-trajectories</code>, inspect the output</li>
+<li>Read <code>trajectory_compressor.py</code> — understand the 5-phase compression strategy</li>
+<li>Browse <code>environments/hermes_base_env.py</code> — understand the subclass interface</li>
+<li>Run <code>batch_runner.py</code> with a small dataset to see parallel generation</li>
+</ul>
+<h4 id="day-6-7-go-deeper">Day 6-7: Go Deeper</h4>
+<ul>
+<li>Pick a recent bug fix from git log, read the PR, understand what broke and why</li>
+<li>Pick an area of interest, make a small improvement (fix a typo, add a test, improve an error message)</li>
+<li>Submit your first PR following CONTRIBUTING.md guidelines</li>
+</ul>
+<h2 id="cross-references">Cross-References</h2>
+<ul>
+<li><code>AGENTS.md</code> — Developer reference for AI assistants, how-to guides for adding tools/commands/config</li>
+<li><code>CONTRIBUTING.md</code> — Contributor workflow, PR process, code style, security considerations</li>
+<li><code>cli-config.yaml.example</code> — Full configuration reference with all options</li>
+<li><code>.env.example</code> — All supported environment variables</li>
+</ul>
+</body>
+</html>
