@@ -10,6 +10,11 @@ Usage:
 
 No login required. A session cookie is warmed by visiting xueqiu.com once
 before calling the data API, since a stateless request is rejected.
+
+KNOWN LIMITATION (as of 2026-08-09): Xueqiu's Aliyun WAF now serves a
+JavaScript-challenge page instead of the real homepage, which defeats this
+plain-HTTP cookie warm-up, so all commands currently fail — see the warning
+at the top of SKILL.md for details and the recommended fallback.
 """
 
 import argparse

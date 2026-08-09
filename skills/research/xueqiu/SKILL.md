@@ -14,6 +14,10 @@ metadata:
 
 # Xueqiu (雪球) — stock quotes and community data
 
+> **⚠️ Currently broken (as of 2026-08-09):** Xueqiu's anti-bot system (Aliyun WAF) now serves a JavaScript-challenge page in place of the real homepage, which defeats this script's plain-HTTP cookie warm-up. This was verified failing both in a sandbox environment and on Hermes's actual production host — it is not a one-off network fluke. Practical effect: all four commands (`quote`, `search`, `hot-posts`, `hot-stocks`) currently fail with connection/API errors rather than returning real data. A real fix would need either a manually-exported browser session cookie or a JS-capable fetch path (e.g. a headless browser) — neither is implemented here yet.
+>
+> **If you're an agent reading this:** you can still try the script, but be prepared for it to fail, and don't loop retrying it. If it fails, tell the user this data source is currently blocked by Xueqiu's anti-bot, and if the request is urgent, suggest a fallback (e.g. a general web search) instead.
+
 Xueqiu's quote/search/trending endpoints work without a logged-in account, but they need a warmed anti-bot session cookie: a plain, stateless `curl` call to the API alone will fail. A helper script handles the two-step cookie warm-up (visit homepage first, then call the API with that session).
 
 ## Helper Script
