@@ -31,8 +31,11 @@ Hermes's current codebase surfaced:
   channels cannot function there and are excluded from this design.
 - The remaining channels — RSS, Bilibili, V2EX, Xueqiu, and a free-tier
   Twitter path — work headless (pure HTTP/CLI, no interactive browser
-  login) and fill real gaps: `skills/feeds/` is currently an empty
-  placeholder category, and Bilibili/V2EX/Xueqiu have no existing skill.
+  login) and fill real gaps: Bilibili/V2EX/Xueqiu have no existing skill
+  at all. RSS is a partial exception — see the note under skill 1 below;
+  `skills/research/blogwatcher/SKILL.md` already covers subscription-style
+  RSS/Atom monitoring, so the new RSS skill fills a narrower, distinct gap
+  rather than an empty one.
 - Skill discovery in Hermes is filesystem-based (`tools/skills_hub.py`
   scans for `SKILL.md` under `skills/<category>/<name>/`), so no registry
   or manifest needs to be updated — adding a directory is sufficient.
@@ -55,7 +58,22 @@ Hermes's current codebase surfaced:
 
 ### 1. `skills/feeds/rss-reader/SKILL.md`
 
-- Fills the currently-empty `feeds/` category.
+- **Not a duplicate of `skills/research/blogwatcher`, despite both touching
+  RSS.** `blogwatcher` is a stateful subscription tracker: it wraps
+  `blogwatcher-cli` (a separate Go binary with its own SQLite database at
+  `~/.blogwatcher-cli/`), and its whole model is *add a blog once, scan
+  repeatedly, track read/unread over time*. It has real setup cost (install
+  a Go binary or run Docker, initialize a DB) that makes sense for durable,
+  ongoing monitoring but is overkill for "here's a feed URL from this chat
+  message, what are the latest 5 entries" — a single ad-hoc read with no
+  state to maintain. `rss-reader` fills that narrower gap: zero setup
+  beyond `pip install feedparser`, no database, no subscription concept —
+  just fetch one URL, return its entries, done. The new SKILL.md must
+  explicitly cross-reference `blogwatcher` and tell the agent to prefer
+  `blogwatcher` when the user wants ongoing/tracked monitoring rather than
+  a one-off fetch.
+- Fills the currently-empty `feeds/` category (the category itself has
+  only a `DESCRIPTION.md` today — `blogwatcher` lives under `research/`).
 - Dependency: `pip install feedparser` (pure Python library, zero
   external CLI, zero config, no API key).
 - Ships `scripts/fetch_feed.py`: takes a feed URL, returns structured
@@ -81,6 +99,12 @@ Hermes's current codebase surfaced:
 - Explicitly out of scope: `bili login` (interactive QR code — can't run
   headless) and write actions (`like`, `coin`, `dynamic-post`, etc.),
   which require an authenticated session.
+- Verification note: `bilibili-cli`'s default auth mode auto-detects local
+  browser cookies, which won't exist on a fresh headless box. Confirm
+  during implementation that the no-login commands this skill documents
+  genuinely work with zero credential file present (expected, since they're
+  scoped to public/search endpoints, but worth checking rather than
+  assuming).
 
 ### 3. `skills/social-media/v2ex/SKILL.md`
 
@@ -130,6 +154,20 @@ Hermes's current codebase surfaced:
   `twitter bookmarks`. Write actions (post/delete/like/retweet) are
   documented as available upstream but not emphasized, consistent with
   this skill's read-focused purpose.
+- Troubleshooting note to include: `TWITTER_AUTH_TOKEN`/`TWITTER_CT0`
+  env vars alone (without a full browser cookie export) can trigger
+  `twitter-cli`'s 226 "automated behavior" error on *any* command,
+  including reads — not just writes. The SKILL.md should say this
+  upfront so implementers aren't surprised when a read-only command hits
+  it.
+
+## Delivery structure
+
+The five skills are functionally independent — different categories, no
+shared code or dependencies between them. The implementation plan should
+treat each as a separately completable unit, so that if one platform's
+upstream CLI turns out to be broken, rate-limited, or blocked mid-work,
+the other four can still ship without being blocked on it.
 
 ## Non-goals
 
