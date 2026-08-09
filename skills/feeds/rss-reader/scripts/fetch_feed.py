@@ -10,7 +10,13 @@ Install dependency:  pip install feedparser
 
 import argparse
 import json
+import socket
 import sys
+import urllib.error
+import urllib.request
+
+_TIMEOUT = 10
+_USER_AGENT = "Mozilla/5.0 (compatible; Hermes-RSS-Reader/1.0)"
 
 
 def fetch_feed(url: str, limit: int = 10) -> dict:
@@ -21,7 +27,13 @@ def fetch_feed(url: str, limit: int = 10) -> dict:
         print("Error: feedparser not installed. Run: pip install feedparser", file=sys.stderr)
         sys.exit(1)
 
-    parsed = feedparser.parse(url)
+    request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+    try:
+        with urllib.request.urlopen(request, timeout=_TIMEOUT) as response:
+            parsed = feedparser.parse(response)
+    except (urllib.error.URLError, socket.timeout) as exc:
+        print(f"Error: could not fetch feed at {url}: {exc}", file=sys.stderr)
+        sys.exit(1)
 
     if parsed.bozo and not parsed.entries:
         message = str(parsed.get("bozo_exception", "unknown parse error"))
@@ -63,6 +75,9 @@ def main():
     parser.add_argument("--limit", type=int, default=10, help="Max entries to return (default: 10)")
     parser.add_argument("--text-only", action="store_true", help="Output plain text instead of JSON")
     args = parser.parse_args()
+
+    if args.limit < 0:
+        parser.error("--limit must be >= 0")
 
     data = fetch_feed(args.url, limit=args.limit)
 
