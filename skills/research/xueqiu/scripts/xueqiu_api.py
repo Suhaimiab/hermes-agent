@@ -20,6 +20,7 @@ at the top of SKILL.md for details and the recommended fallback.
 import argparse
 import http.cookiejar
 import json
+import socket
 import sys
 import urllib.error
 import urllib.parse
@@ -81,7 +82,17 @@ def cmd_quote(symbol: str):
 
 
 def cmd_search(query: str, limit: int):
+    limit = min(max(limit, 0), 50)
+    if limit == 0:
+        return []
     data = _get_json(f"https://xueqiu.com/stock/search.json?code={urllib.parse.quote(query)}&size={limit}")
+    if "stocks" not in data:
+        print(
+            "Error: unexpected response from Xueqiu search (missing 'stocks' field) "
+            "— likely an anti-bot block, see the warning in SKILL.md.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     stocks = data.get("stocks") or []
     return [
         {"symbol": s.get("code", ""), "name": s.get("name", ""), "exchange": s.get("exchange", "")}
@@ -97,6 +108,13 @@ def cmd_hot_posts(limit: int):
         "https://xueqiu.com/v4/statuses/public_timeline_by_category.json"
         f"?since_id=-1&max_id=-1&count={limit}&category=-1"
     )
+    if "list" not in data:
+        print(
+            "Error: unexpected response from Xueqiu hot-posts (missing 'list' field) "
+            "— likely an anti-bot block, see the warning in SKILL.md.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     results = []
     for item in (data.get("list") or [])[:limit]:
         try:
@@ -116,8 +134,19 @@ def cmd_hot_posts(limit: int):
 
 
 def cmd_hot_stocks(limit: int, stock_type: int):
+    limit = min(max(limit, 0), 50)
+    if limit == 0:
+        return []
     data = _get_json(f"https://stock.xueqiu.com/v5/stock/hot_stock/list.json?size={limit}&type={stock_type}")
-    items = (data.get("data") or {}).get("items") or []
+    inner = data.get("data")
+    if not isinstance(inner, dict) or "items" not in inner:
+        print(
+            "Error: unexpected response from Xueqiu hot-stocks (missing 'data.items' field) "
+            "— likely an anti-bot block, see the warning in SKILL.md.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    items = inner.get("items") or []
     return [
         {
             "symbol": item.get("code") or item.get("symbol", ""),
@@ -159,7 +188,14 @@ def main():
             result = cmd_hot_posts(args.limit)
         elif args.command == "hot-stocks":
             result = cmd_hot_stocks(args.limit, args.type)
-    except urllib.error.URLError as e:
+    except json.JSONDecodeError:
+        print(
+            "Error: Xueqiu did not return JSON (likely an anti-bot challenge page) "
+            "— see the warning in SKILL.md.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    except (urllib.error.URLError, socket.timeout) as e:
         print(f"Error: network request failed: {e}", file=sys.stderr)
         sys.exit(1)
 
