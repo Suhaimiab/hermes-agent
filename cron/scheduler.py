@@ -916,11 +916,30 @@ def tick(verbose: bool = True, adapters=None, loop=None) -> int:
     try:
         lock_fd = open(_LOCK_FILE, "w")
         if fcntl:
-            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            # Try non-blocking first; if locked, wait up to 30s with retries
+            # to avoid skipping ticks after a long-running job releases the lock.
+            import time as _time
+            _lock_acquired = False
+            for _attempt in range(3):
+                try:
+                    fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    _lock_acquired = True
+                    break
+                except (OSError, IOError):
+                    if _attempt < 2:
+                        logger.warning(
+                            "Tick lock held by another instance, retrying in 10s "
+                            "(attempt %d/3)", _attempt + 1
+                        )
+                        _time.sleep(10)
+                    else:
+                        raise
+            if not _lock_acquired:
+                raise OSError("Failed to acquire tick lock after 3 attempts")
         elif msvcrt:
             msvcrt.locking(lock_fd.fileno(), msvcrt.LK_NBLCK, 1)
     except (OSError, IOError):
-        logger.debug("Tick skipped — another instance holds the lock")
+        logger.warning("Tick skipped — another instance holds the lock (retries exhausted)")
         if lock_fd is not None:
             lock_fd.close()
         return 0

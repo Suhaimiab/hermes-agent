@@ -662,6 +662,8 @@ class APIServerAdapter(BasePlatformAdapter):
                 history.  Clients that don't understand the custom event type
                 silently ignore it per the SSE specification.
                 """
+                if "chatboxapp" in request.headers.get("User-Agent", "").lower():
+                    return
                 if event_type != "tool.started":
                     return
                 if name.startswith("_"):
