@@ -2462,9 +2462,12 @@ install_node_deps() {
         # installed", hiding the degradation from the user (#77003). Now it
         # fails the install outright instead of burying the warning (#85297).
         # Capture npm output so failures are diagnosable (#87340).
+        # --loglevel=error, not --silent: --silent sets npm's loglevel to
+        # "silent", which drops npm's own error text too, defeating the
+        # capture below -- a failure would land here with an empty file.
         local npm_log
         npm_log="$(mktemp)"
-        if ! run_with_timeout "$NODE_DEPS_TIMEOUT" npm install --silent \
+        if ! run_with_timeout "$NODE_DEPS_TIMEOUT" npm install --loglevel=error \
                 >"$npm_log" 2>&1; then
             log_error "npm install failed or timed out; Node.js dependencies were not installed"
             if [ -s "$npm_log" ]; then
@@ -2578,9 +2581,12 @@ install_node_deps() {
         # Report success only on actual success, same as node-deps above
         # (#77003) — and fail the install outright (#85297).
         # Capture npm output so failures are diagnosable (#87340).
+        # --loglevel=error, not --silent: --silent sets npm's loglevel to
+        # "silent", which drops npm's own error text too, defeating the
+        # capture below -- a failure would land here with an empty file.
         local tui_npm_log
         tui_npm_log="$(mktemp)"
-        if ! run_with_timeout "$NODE_DEPS_TIMEOUT" npm install --silent \
+        if ! run_with_timeout "$NODE_DEPS_TIMEOUT" npm install --loglevel=error \
                 >"$tui_npm_log" 2>&1; then
             log_error "TUI npm install failed or timed out; TUI dependencies were not installed"
             if [ -s "$tui_npm_log" ]; then
@@ -3003,7 +3009,9 @@ ensure_browser() {
     log_file="$(mktemp)"
     # Time-boxed (#39219): a stalled npm registry fetch here would otherwise
     # hang the installer with no progress, same class as the desktop build.
-    if ! run_with_timeout "$NODE_DEPS_TIMEOUT" "$npm_bin" install -g --prefix "$HERMES_HOME/node" --silent --ignore-scripts \
+    # --loglevel=error, not --silent: --silent drops npm's own error text
+    # too, so a failure here would be captured to log_file as empty.
+    if ! run_with_timeout "$NODE_DEPS_TIMEOUT" "$npm_bin" install -g --prefix "$HERMES_HOME/node" --loglevel=error --ignore-scripts \
         "@askjo/camofox-browser@^1.5.2" \
         >"$log_file" 2>&1; then
         log_error "npm install failed or timed out:"
