@@ -152,6 +152,13 @@ def relay(source, destination):
 
 def forward_https(conn, host, port, request):
     context = ssl.create_default_context(cafile=str(REAL_CA))
+    # close_request() below forces `Connection: close` on every upstream
+    # request, and CDN-backed registries (npm's included) routinely honor
+    # that by tearing down the raw TCP socket without a TLS close_notify.
+    # Without this flag Python's ssl module treats that as a protocol
+    # violation (SSLEOFError) instead of a clean EOF, aborting every relay
+    # mid-response and failing the client's install deterministically.
+    context.options |= ssl.OP_IGNORE_UNEXPECTED_EOF
     with socket.create_connection((host, port), timeout=UPSTREAM_TIMEOUT_SECONDS) as raw:
         with context.wrap_socket(raw, server_hostname=host) as upstream:
             upstream.sendall(close_request(request))
