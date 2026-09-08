@@ -112,6 +112,23 @@ collect_sandbox_logs() {
     cat "$dest/proxy.log" >&2
     echo "--- end proxy.log ---" >&2
   fi
+
+  # npm's own debug log holds the actual cause behind an "Exit handler never
+  # called!" crash (npm's --loglevel=error swallows it on stdout/stderr). It
+  # lands under $DEV_SANDBOX_HOME, which install.sh binds to $SANDBOX_ROOT/home
+  # on the host -- copy the newest one out for the same reason as proxy.log.
+  local npm_logs="$SANDBOX_ROOT/home/.npm/_logs"
+  if [ -d "$npm_logs" ]; then
+    mkdir -p "$dest/npm-logs"
+    cp -a "$npm_logs/." "$dest/npm-logs/" 2>/dev/null || true
+    local newest
+    newest="$(ls -t "$npm_logs"/*.log 2>/dev/null | head -1 || true)"
+    if [ -n "$newest" ] && [ -s "$newest" ]; then
+      echo "--- npm debug log ($newest) ---" >&2
+      cat "$newest" >&2
+      echo "--- end npm debug log ---" >&2
+    fi
+  fi
 }
 
 # ── preflight ──────────────────────────────────────────────────────────────
