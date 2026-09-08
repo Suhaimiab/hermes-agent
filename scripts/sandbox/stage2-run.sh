@@ -196,6 +196,11 @@ if [ "$DEV_SANDBOX_INTERACTIVE" = true ]; then
   dev_mounts=(--dev /dev)
 fi
 
+# npm's default of 15 concurrent sockets floods proxy.py's thread-per-connection
+# CONNECT tunnel faster than it can complete TLS handshakes, so npm gives up on
+# the slow ones mid-handshake (SSLEOFError) and crashes ("Exit handler never
+# called!"). Capping npm's own fan-out (npm_config_maxsockets below) keeps the
+# burst inside what the proxy can service.
 exec bwrap \
   --unshare-pid \
   --die-with-parent --proc /proc --tmpfs /tmp \
@@ -222,6 +227,7 @@ exec bwrap \
   --setenv HTTPS_PROXY http://127.0.0.1:8080 \
   --setenv ALL_PROXY http://127.0.0.1:8080 \
   --setenv NO_PROXY '' \
+  --setenv npm_config_maxsockets 6 \
   --setenv DEV_SANDBOX_INTERACTIVE "$DEV_SANDBOX_INTERACTIVE" \
   --setenv ELECTRON_DISABLE_SANDBOX 1 \
   "${node_env[@]}" \
