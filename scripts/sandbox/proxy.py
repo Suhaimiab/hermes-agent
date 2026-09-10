@@ -176,8 +176,17 @@ def handle_connect(conn, target):
     cert, key = cert_for(host)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(cert, key)
-    with context.wrap_socket(conn, server_side=True) as tls:
-        nested = read_request(tls)
+    try:
+        tls_cm = context.wrap_socket(conn, server_side=True)
+    except Exception as error:
+        print(f'[diag] client handshake failed host={host}: {error!r}', file=sys.stderr, flush=True)
+        raise
+    with tls_cm as tls:
+        try:
+            nested = read_request(tls)
+        except Exception as error:
+            print(f'[diag] reading client request failed host={host}: {error!r}', file=sys.stderr, flush=True)
+            raise
         if not nested:
             return
         line = nested.split(b'\r\n', 1)[0].decode('iso-8859-1')
@@ -186,7 +195,11 @@ def handle_connect(conn, target):
         if found is not None:
             respond_fixture(tls, found)
         else:
-            forward_https(tls, host, port, nested)
+            try:
+                forward_https(tls, host, port, nested)
+            except Exception as error:
+                print(f'[diag] forwarding to upstream failed host={host}: {error!r}', file=sys.stderr, flush=True)
+                raise
 
 
 def host_from_headers(request):

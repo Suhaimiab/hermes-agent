@@ -480,10 +480,16 @@ INTERACTIVE=false
 if [ -t 0 ] && [ -t 1 ]; then
   INTERACTIVE=true
 fi
+# Deliberately not auto-detected from `command -v node`: the sandbox manages
+# its own Node install with its own version, and pointing node-gyp at whatever
+# unrelated Node happens to be on the *host's* PATH (e.g. the system Node every
+# GitHub Actions Ubuntu runner ships for its own JS actions, at /usr/local)
+# sends node-gyp looking for headers/common.gypi that don't exist there,
+# breaking every native addon rebuild (node-pty and friends) with a
+# `gyp: .../common.gypi not found` error. Leave unset unless the caller
+# explicitly opts in; node-gyp's own default (downloading headers matching the
+# sandboxed Node's actual version) is always correct.
 NODE_DIR="${DEV_SANDBOX_NODE_DIR:-}"
-if [ -z "$NODE_DIR" ] && command -v node >/dev/null; then
-  NODE_DIR="$(dirname "$(dirname "$(command -v node)")")"
-fi
 WAYLAND_SOCKET=""
 if [ -n "${XDG_RUNTIME_DIR:-}" ] && [ -n "${WAYLAND_DISPLAY:-}" ] \
   && [ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]; then
